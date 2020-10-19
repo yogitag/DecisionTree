@@ -1,62 +1,252 @@
-import matplotlib.pyplot as plt
+from sklearn import datasets
 import pandas as pd
 import numpy as np
-from sklearn import datasets
-from numpy import random
+from colorama import Fore, Back, Style
+from termcolor import colored, cprint
+# Node class to denote Root and Internal Nodes of the decision tree
+class Node():
+    def __init__(self,feature,split_value,gini_impurity,is_root):
+        self.is_root = is_root
+        self.parent_node = None
+        self.left_node = None
+        self.right_node = None
+        self.is_left = True
+        self.feature = feature
+        self.split_value = split_value
+        self.left_leaf = None
+        self.right_leaf = None
+        self.gini_impurity = gini_impurity
+        self.level = 2
+
+# Leaf class to denote Leaves of the decision tree
+class Leaf():
+    def __init__(self,parent_node,split_value,gini_impurity,class_count,is_left):
+        self.parent_node = parent_node
+        self.split_value = split_value
+        self.gini_impurity = gini_impurity
+        self.class_count = class_count
+        self.is_left = is_left
+        self.class_label = ''
+        min_count = 0
+        for i in range(len(self.class_count)):
+            if min_count < self.class_count[i]:
+                min_count = self.class_count[i]
+                self.class_label = i
+
+# define function to choose the feature for node and its attributes
+def select_feature():
+
+    attributes = []
+    gini_impurity_min =2
+
+    #check for all the features and class labels
+    for feature in features:
+        #print(feature)
+        values = dataframe[feature].sort_values().tolist()
+        for i in range(len(values) - 1):
+            values[i] = (values[i] + values[i + 1]) / 2
+
+        for i in range(len(values) - 1):
+            gini_impurities = get_gini_impurity(feature, values[i])
+            if gini_impurities == []:
+                break
+            if gini_impurities[0] < gini_impurity_min:
+                gini_impurity_min = gini_impurities[0]
+                attributes = []
+                attributes.append(feature)
+                attributes.append(values[i])
+                attributes.append(gini_impurities[0])
+                attributes.append(gini_impurities[1])
+                attributes.append(gini_impurities[2])
+                attributes.append(gini_impurities[3])
+                attributes.append(gini_impurities[4])
+                attributes.append(gini_impurities[5])
+                if gini_impurity_min == 0:
+                    return attributes
+
+    return attributes
+
+# define function to calculate splitting value for the numeric continuous feature
+def get_gini_impurity(feature, split_value):
+
+    result_left_df = dataframe[dataframe[feature].le(split_value)]
+    left_label1_yes = result_left_df['target'].eq(class_labels[0]).sum()
+    left_label2_yes = result_left_df['target'].eq(class_labels[1]).sum()
+    left_label3_yes = result_left_df['target'].eq(class_labels[2]).sum()
+
+    result_right_df = dataframe[dataframe[feature].gt(split_value)]
+    right_label1_yes = result_right_df['target'].eq(class_labels[0]).sum()
+    right_label2_yes = result_right_df['target'].eq(class_labels[1]).sum()
+    right_label3_yes = result_right_df['target'].eq(class_labels[2]).sum()
+
+    total_left_num = left_label1_yes + left_label2_yes+left_label3_yes
+    total_right_num = right_label1_yes + right_label2_yes+right_label3_yes
+
+    if total_left_num == 0  or total_right_num == 0 :
+        return []
+
+    # calculation for Gini impurity
+    left_gini_impurity = 1 - ((left_label1_yes / total_left_num) ** 2) - ((left_label2_yes / total_left_num) ** 2) - ((left_label3_yes/total_left_num)**2)
+    right_gini_impurity = 1 - ((right_label1_yes / total_right_num) ** 2) - ((right_label2_yes / total_right_num) ** 2)- ((right_label3_yes/total_right_num)**2)
+    gini_impurity = (total_left_num / (total_left_num + total_right_num) * left_gini_impurity) + (
+                total_right_num / (total_left_num + total_right_num) * right_gini_impurity)
+    total = total_left_num + total_right_num
+    weighted_impurity_decrease =  (total/ len(dataframe_copy)) * (gini_impurity - ((total_right_num / total) * right_gini_impurity)
+               - ((total_left_num / total) * left_gini_impurity))
+
+    return [gini_impurity,left_gini_impurity,right_gini_impurity,[left_label1_yes,left_label2_yes,left_label3_yes,]
+            ,[right_label1_yes,right_label2_yes,right_label3_yes],weighted_impurity_decrease]
+
+# define function create and attach it to the decision free at the right place
+def create_attach_node(leaf, attributes,is_root):
+
+    node = Node(attributes[0], attributes[1], attributes[2],is_root)
+    # print('**** Node Created ***')
+    # print('Node Created for ',leaf.is_left, 'leaf :', node.feature, ' Split Values : ',node.split_value,' Gini impurity :',node.gini_impurity)
+
+    # making connections between root node and created node
+    if is_root == False:
+        node.parent_node = leaf.parent_node
+        if leaf.is_left :
+            leaf.parent_node.left_node = node
+        else:
+            leaf.parent_node.right_node = node
+
+    node.is_left = leaf.is_left
+    left_leaf = Leaf(node, attributes[1], attributes[3], attributes[5], True)
+    right_leaf = Leaf(node,attributes[1], attributes[4], attributes[6], False)
+
+    # making connections between node and the leaf
+    node.left_leaf = left_leaf
+    node.right_leaf = right_leaf
+    left_leaf.parent_node = node
+    right_leaf.parent_node = node
+    # print('**** Left and Right Leaf ***')
+    # print('left_leaf Created :', left_leaf.class_count, 'for',left_leaf.parent_node.feature,' gini impurity : ', left_leaf.gini_impurity)
+    # print('right_leaf Created :', right_leaf.class_count, 'for',right_leaf.parent_node.feature,' gini impurity : ', right_leaf.gini_impurity)
+
+    #storing into leaf stack to decide if it can be coverted to internal node
+    if ~(right_leaf.gini_impurity == 0):
+        leaves.append(right_leaf)
+    if ~(left_leaf.gini_impurity == 0):
+        leaves.append(left_leaf)
+
+    if is_root == False:
+        # Replace leaf with internal node
+        if leaf.is_left is True:
+            leaf.parent_node.left_node = node
+            node.parent_node.left_leaf = None
+        else:
+            leaf.parent_node.right_node = node
+            node.parent_node.right_leaf = None
 
 # Load the iris dataset
 iris = datasets.load_iris()
-dataframe = pd.DataFrame(iris.data, columns = iris.feature_names)
-no_records = len(dataframe)
+dataframe = pd.DataFrame(data= np.c_[iris['data'], iris['target']],columns= iris['feature_names'] + ['target'])
 
-# set the number of clusters evaluate the Algorithm behaviour
-no_clusters = 11
+# divide the dataset into train and test datasets
+dataframe_copy = dataframe.copy()
+train_set_df = dataframe_copy.sample(frac=0.75, random_state=0)
+test_set_df = dataframe_copy.drop(train_set_df.index)
 
-# create input numpy array
-X = pd.DataFrame(dataframe, columns = ['sepal length (cm)','sepal width (cm)',
-                                       'petal length (cm)','petal width (cm)']).to_numpy()
+# To see the train dataset for training Decision Tree Algorithm
+train_set_csv = dataframe.to_csv('training_data.csv', index = True)
 
-# This array is used to save the error cost for the respective number of clusters
-cost_array = []
+# fetch the class labels and features of the dataset
+class_labels = np.sort(train_set_df['target'].unique(),axis = 0)
+features = np.delete(train_set_df.columns.values,[4])
 
-for i in range(1,no_clusters):
+# adding dummy leaf to get it work for root node
+leaf = Leaf(None,'',1,'','')
+leaves = [leaf]
+is_root = True
+root_node = None
 
-    # Ramdomly initialize i number of centroids from the records
-    centroids = []
-    for j in range(i):
-        centroids.append(X[random.randint(1, no_records)])
+while leaves != []:
 
-    # assigning centroids to each record in dataset by index
-    records_centroid_index = []
-    for x in range(no_records):
-        diff = []
-        for c in range(i):
-            # get square distance from each centroid and store the index of the minimum
-            diff.append(sum((X[x] - centroids[c]) ** 2))
-        records_centroid_index.append(np.array(diff).argmin())
+    dataframe = dataframe_copy
+    # Either Leaf node is converted to internal node or does not grow further
+    leaf = leaves.pop()
+    leaf_node = leaf.parent_node
 
-    # update centroids as the average mean of assigned records
-    for c in range(len(centroids)):
-        # get all the records that belong to that cluster
-        records_per_centroid= np.where(np.array(records_centroid_index) == c)[0]
-        if len(records_per_centroid) != 0:
-            # initialize the new centroid
-            new_centroid = np.zeros(X.shape[1])
-            # assign value to initialized centroid
-            for r in records_per_centroid:
-                new_centroid = new_centroid+X[r]
-            centroids[c] = new_centroid/len(records_per_centroid)
+    if is_root == False:
+        # get all feature conditions of the leaf
+        leaf_flag = True
+        while leaf_node:
+            if leaf_flag:
+                if leaf.is_left:
+                    condition = dataframe[leaf_node.feature].le(leaf_node.split_value)
+                else:
+                    condition = dataframe[leaf_node.feature].gt(leaf_node.split_value)
+                leaf_node = leaf.parent_node
+            else:
+                leaf_node = leaf_node.parent_node
+                if leaf_node.is_left:
+                    condition = dataframe[leaf_node.feature].le(leaf_node.split_value)
+                else:
+                    condition = dataframe[leaf_node.feature].gt(leaf_node.split_value)
+            dataframe = dataframe.where(condition).dropna()
 
-    # compute error cost for each number of clusters
-    for x in range(no_records):
-        cost  = sum((X[x] - centroids[records_centroid_index[x]]) ** 2)
-    cost = cost/no_records
-    print('No of Clusters :',i,' Cost: ',cost)
-    cost_array.append(cost)
+            leaf_flag = False
+            if leaf_node.is_root == True:
+                root_node = leaf_node
+                break
 
-# Line gragh to observe Elbow to select the optimum number of clusters
-plt.plot(range(1, no_clusters), cost_array)
-plt.title('Graph to observe an Elbow formation')
-plt.xlabel('Number of clusters')
-plt.ylabel('Cost')
-plt.show()
+    # get the node attributes by selecting feature
+    attributes = select_feature()
+    if attributes !=[]:
+        # check if gini impurity value of the parent node is less than child node make the child node as leaf
+        if is_root or ((leaf.gini_impurity - attributes[2]) >= attributes[7] ):
+            create_attach_node(leaf, attributes, is_root)
+
+    is_root = False
+
+# print decision tree to predict output
+print(Style.BRIGHT+'\n\t\t\t\t\tDecision Tree for the Iris Dataset\n')
+nodes_list = [root_node]
+print(Style.BRIGHT + Back.LIGHTCYAN_EX + 'Root Node Feature: '+root_node.feature)
+while nodes_list !=[]:
+    root_node = nodes_list.pop()
+    if root_node.parent_node:
+        if root_node.is_left:
+            equality = ' <= '
+            node_name = 'Left Node'
+        else:
+            equality = ' > '
+            node_name = 'Right Node'
+        display_str = Style.BRIGHT + Back.LIGHTCYAN_EX + '\t\t\t\t|'+node_name+ '-->'+root_node.parent_node.feature + equality + str(
+                root_node.parent_node.split_value)
+        print(display_str.expandtabs(root_node.parent_node.level))
+
+    if root_node.left_leaf:
+        display_str = Style.BRIGHT + Back.LIGHTCYAN_EX + '\t\t\t\t|-->' + root_node.feature + ' <= ' + str(
+            root_node.split_value)
+        class_count_str = ' '.join(map(str, root_node.left_leaf.class_count))
+        display_str = display_str+'\n'+Style.BRIGHT + Back.LIGHTGREEN_EX + '\t\t\t\t|------>Left Leaf Gini:'+str(root_node.left_leaf.gini_impurity)+\
+                      ' Values: ['+class_count_str+'] Class:'+str(root_node.left_leaf.class_label)
+        print(display_str.expandtabs(root_node.level))
+    if root_node.right_leaf:
+        display_str = Style.BRIGHT + Back.LIGHTCYAN_EX + '\t\t\t\t|-->' + root_node.feature + ' > ' + str(
+            root_node.split_value)
+        class_count_str = ' '.join(map(str, root_node.right_leaf.class_count))
+        display_str = display_str + '\n' + Style.BRIGHT + Back.LIGHTGREEN_EX + '\t\t\t\t|------>Right Leaf Gini:' + str(
+            root_node.right_leaf.gini_impurity) + \
+                      ' Values: [' + class_count_str + '] Class:' + str(root_node.right_leaf.class_label)
+        print(display_str.expandtabs(root_node.level))
+
+    if root_node.left_node and root_node.right_node:
+        root_node.left_node.level = root_node.level + 2
+        root_node.right_node.level = root_node.level + 2
+        nodes_list.append(root_node.right_node)
+        nodes_list.append(root_node.left_node)
+        continue
+
+    if root_node.left_node:
+        root_node.left_node.level = root_node.level + 2
+        nodes_list.append(root_node.left_node)
+
+    if root_node.right_node:
+        root_node.right_node.level = root_node.level + 2
+        nodes_list.append(root_node.right_node)
+
+
